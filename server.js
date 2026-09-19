@@ -36,14 +36,62 @@ const NoticeSchema = new mongoose.Schema({
 
 const Notice = mongoose.model("Notice", NoticeSchema);
 
+// ==================== SSE (Server-Sent Events) ====================
+// In-memory list of connected clients (no MongoDB needed)
+const sseClients = new Set();
+
+function broadcastNotice(notice) {
+  const data = JSON.stringify({
+    type: "new_notice",
+    notice: {
+      _id: notice._id,
+      title: notice.title,
+      content: notice.content,
+      category: notice.category,
+      author: notice.author,
+      date: notice.date,
+    },
+  });
+
+  for (const client of sseClients) {
+    try {
+      client.write(`data: ${data}\n\n`);
+    } catch (err) {
+      // Client probably disconnected
+      sseClients.delete(client);
+    }
+  }
+}
+
+// SSE endpoint - clients connect here to receive live updates
+app.get("/api/events", (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.flushHeaders();
+
+  // Send a comment to keep connection alive
+  res.write(": connected\n\n");
+
+  sseClients.add(res);
+
+  // Remove client when they disconnect
+  req.on("close", () => {
+    sseClients.delete(res);
+  });
+});
+
+// ==================== AUTH ====================
 app.post("/api/login", (req, res) => {
   const { username, password } = req.body;
-  if (username === "ISSTICKZ" && password === "isstickz@661") {
+  if (username === "COMSCIENCE" && password === "COMSCI1234") {
     return res.json({ success: true });
   }
   res.status(401).json({ success: false });
 });
 
+// ==================== NOTICES ====================
 app.get("/api/notices", async (req, res) => {
   try {
     const notices = await Notice.find().sort({ date: -1 });
@@ -78,6 +126,10 @@ app.post("/api/notices", async (req, res) => {
     });
 
     await notice.save();
+
+    // Broadcast to all connected SSE clients
+    broadcastNotice(notice);
+
     res.status(201).json(notice);
   } catch (err) {
     res.status(500).json({ error: err.message });

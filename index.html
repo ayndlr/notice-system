@@ -397,11 +397,81 @@
             let allNotices = [];
             let isLoggedIn = localStorage.getItem("nb_auth") === "true";
             let tempFile = null;
+            let eventSource = null;
+            let notificationsEnabled = localStorage.getItem("nb_notifications") === "true";
 
             window.onload = () => {
                 updateAuthUI();
                 fetchNotices();
+                setupSSE();
             };
+
+            // ==================== SSE + Notifications ====================
+            function setupSSE() {
+                if (eventSource) {
+                    eventSource.close();
+                }
+
+                eventSource = new EventSource(`${API_URL}/events`);
+
+                eventSource.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.type === "new_notice") {
+                            // Refresh the list automatically
+                            fetchNotices();
+
+                            // Show browser notification if previously allowed
+                            if (
+                                notificationsEnabled &&
+                                Notification.permission === "granted"
+                            ) {
+                                showBrowserNotification(data.notice);
+                            }
+                        }
+                    } catch (e) {
+                        console.error("SSE parse error", e);
+                    }
+                };
+
+                eventSource.onerror = () => {
+                    console.log("SSE connection lost, browser will retry...");
+                };
+            }
+
+            function showBrowserNotification(notice) {
+                const title = "📢 New Notice: " + notice.title;
+                const options = {
+                    body: notice.content.substring(0, 120) + (notice.content.length > 120 ? "..." : ""),
+                    icon: "ico.png",
+                    tag: "notice-" + notice._id,
+                    requireInteraction: false,
+                };
+
+                const n = new Notification(title, options);
+                n.onclick = () => {
+                    window.focus();
+                    n.close();
+                };
+            }
+
+            async function requestNotificationPermission() {
+                if (!("Notification" in window)) return;
+
+                if (Notification.permission === "granted") {
+                    notificationsEnabled = true;
+                    localStorage.setItem("nb_notifications", "true");
+                    return;
+                }
+
+                if (Notification.permission !== "denied") {
+                    const permission = await Notification.requestPermission();
+                    if (permission === "granted") {
+                        notificationsEnabled = true;
+                        localStorage.setItem("nb_notifications", "true");
+                    }
+                }
+            }
 
             async function fetchNotices() {
                 try {
@@ -645,6 +715,10 @@
                     updateAuthUI();
                     closeModals();
                     fetchNotices();
+
+                    // Request notification permission after successful login
+                    // (uses localStorage so it remembers for next visits)
+                    requestNotificationPermission();
                 } else alert("Invalid credentials");
             }
 
