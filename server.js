@@ -2,6 +2,7 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const { GridFSBucket } = require("mongodb");
+const webpush = require("web-push");
 
 const app = express();
 
@@ -9,6 +10,46 @@ app.use(cors());
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
+// ==================== VAPID KEYS (Web Push) ====================
+const VAPID_PUBLIC_KEY = "BEfP944h9mPSf9s4ZjIlNqcj02Ff8E5HFx0pKLEpajtQGCh3KMJXFIraqVb6Xx5z3c_1pV8ejtGgHJIwIMwPHWg";
+const VAPID_PRIVATE_KEY = "_LGMk0-nL6NqKkM-CGBI6MOV1xqxSUWIN2e_p9mpu6s";
+
+webpush.setVapidDetails(
+  "mailto:admin@noticeboard.local",
+  VAPID_PUBLIC_KEY,
+  VAPID_PRIVATE_KEY
+);
+
+// In-memory store for push subscriptions (NO MongoDB changes)
+const pushSubscriptions = new Set();
+
+function addSubscription(sub) {
+  const key = JSON.stringify(sub);
+  pushSubscriptions.add(key);
+}
+
+function removeSubscription(sub) {
+  const key = JSON.stringify(sub);
+  pushSubscriptions.delete(key);
+}
+
+async function sendPushToAll(payload) {
+  const dead = [];
+  for (const subStr of pushSubscriptions) {
+    try {
+      const sub = JSON.parse(subStr);
+      await webpush.sendNotification(sub, JSON.stringify(payload));
+    } catch (err) {
+      if (err.statusCode === 404 || err.statusCode === 410) {
+        dead.push(subStr);
+      }
+      console.error("Push error:", err.statusCode || err.message);
+    }
+  }
+  dead.forEach((s) => pushSubscriptions.delete(s));
+}
+
+// ==================== MongoDB ====================
 const MONGO_URI =
   "mongodb://notice-board-sys:notice-board-sys-sticks@ac-w5b57gt-shard-00-00.wcrralm.mongodb.net:27017,ac-w5b57gt-shard-00-01.wcrralm.mongodb.net:27017,ac-w5b57gt-shard-00-02.wcrralm.mongodb.net:27017/?ssl=true&replicaSet=atlas-q26fhi-shard-0&authSource=admin&appName=Cluster0";
 
@@ -36,8 +77,7 @@ const NoticeSchema = new mongoose.Schema({
 
 const Notice = mongoose.model("Notice", NoticeSchema);
 
-// ==================== SSE (Server-Sent Events) ====================
-// In-memory list of connected clients (no MongoDB needed)
+// ==================== SSE (for live list refresh while tab open) ====================
 const sseClients = new Set();
 
 function broadcastNotice(notice) {
@@ -57,29 +97,41 @@ function broadcastNotice(notice) {
     try {
       client.write(`data: ${data}\n\n`);
     } catch (err) {
-      // Client probably disconnected
       sseClients.delete(client);
     }
   }
 }
 
-// SSE endpoint - clients connect here to receive live updates
 app.get("/api/events", (req, res) => {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.flushHeaders();
-
-  // Send a comment to keep connection alive
   res.write(": connected\n\n");
-
   sseClients.add(res);
+  req.on("close", () => sseClients.delete(res));
+});
 
-  // Remove client when they disconnect
-  req.on("close", () => {
-    sseClients.delete(res);
-  });
+// ==================== Web Push endpoints ====================
+app.get("/api/vapid-public-key", (req, res) => {
+  res.json({ publicKey: VAPID_PUBLIC_KEY });
+});
+
+app.post("/api/subscribe", (req, res) => {
+  const subscription = req.body;
+  if (!subscription || !subscription.endpoint) {
+    return res.status(400).json({ error: "Invalid subscription" });
+  }
+  addSubscription(subscription);
+  console.log("New push subscription. Total:", pushSubscriptions.size);
+  res.status(201).json({ success: true });
+});
+
+app.post("/api/unsubscribe", (req, res) => {
+  const subscription = req.body;
+  if (subscription) removeSubscription(subscription);
+  res.json({ success: true });
 });
 
 // ==================== AUTH ====================
@@ -127,8 +179,19 @@ app.post("/api/notices", async (req, res) => {
 
     await notice.save();
 
-    // Broadcast to all connected SSE clients
+    // Live update for open tabs
     broadcastNotice(notice);
+
+    // Real Web Push to all subscribed devices (even if browser closed)
+    const payload = {
+      title: "📢 New Notice: " + notice.title,
+      body: notice.content.substring(0, 120) + (notice.content.length > 120 ? "..." : ""),
+      data: {
+        url: "/",
+        noticeId: notice._id.toString(),
+      },
+    };
+    sendPushToAll(payload).catch(console.error);
 
     res.status(201).json(notice);
   } catch (err) {
@@ -145,14 +208,12 @@ app.put("/api/notices/:id", async (req, res) => {
     let updateData = { ...otherData };
 
     if (attachment && attachment.data) {
-      // Cleanup old file from GridFS
       if (existing.fileId) {
         try {
           await bucket.delete(existing.fileId);
         } catch (e) {}
       }
 
-      // Upload new file
       const buffer = Buffer.from(attachment.data.split(",")[1], "base64");
       const uploadStream = bucket.openUploadStream(attachment.name, {
         contentType: attachment.type,

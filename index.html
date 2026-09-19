@@ -398,106 +398,112 @@
             let isLoggedIn = localStorage.getItem("nb_auth") === "true";
             let tempFile = null;
             let eventSource = null;
-            let notificationsEnabled = localStorage.getItem("nb_notifications") === "true";
 
             window.onload = () => {
                 updateAuthUI();
                 fetchNotices();
                 setupSSE();
-
-                // On mobile, browsers only show the permission popup after a real user tap/click.
-                // So we request it on the first interaction with the page (no visible UI change).
-                const askOnce = () => {
-                    requestNotificationPermission();
-                    document.removeEventListener("click", askOnce);
-                    document.removeEventListener("touchstart", askOnce);
-                };
-                document.addEventListener("click", askOnce);
-                document.addEventListener("touchstart", askOnce);
+                registerServiceWorkerAndSubscribe();
             };
 
-            // ==================== SSE + Notifications ====================
+            // ==================== SSE (live list refresh) ====================
             function setupSSE() {
-                if (eventSource) {
-                    eventSource.close();
-                }
-
+                if (eventSource) eventSource.close();
                 eventSource = new EventSource(`${API_URL}/events`);
-
                 eventSource.onmessage = (event) => {
                     try {
                         const data = JSON.parse(event.data);
                         if (data.type === "new_notice") {
-                            // Refresh the list automatically
-                            fetchNotices();
-
-                            // Show browser notification if previously allowed
-                            if (
-                                notificationsEnabled &&
-                                Notification.permission === "granted"
-                            ) {
-                                showBrowserNotification(data.notice);
-                            }
+                            fetchNotices(); // refresh list instantly
                         }
                     } catch (e) {
                         console.error("SSE parse error", e);
                     }
                 };
-
                 eventSource.onerror = () => {
                     console.log("SSE connection lost, browser will retry...");
                 };
             }
 
-            function showBrowserNotification(notice) {
-                const title = "📢 New Notice: " + notice.title;
-                const options = {
-                    body: notice.content.substring(0, 120) + (notice.content.length > 120 ? "..." : ""),
-                    icon: "ico.png",
-                    tag: "notice-" + notice._id,
-                    requireInteraction: false,
-                };
-
-                const n = new Notification(title, options);
-                n.onclick = () => {
-                    window.focus();
-                    n.close();
-                };
-            }
-
-            async function requestNotificationPermission() {
-                if (!("Notification" in window)) {
-                    console.log("Notifications not supported in this browser");
+            // ==================== Real Web Push ====================
+            async function registerServiceWorkerAndSubscribe() {
+                if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+                    console.log("Web Push not supported in this browser");
                     return;
                 }
 
-                // Already granted before
-                if (Notification.permission === "granted") {
-                    notificationsEnabled = true;
-                    localStorage.setItem("nb_notifications", "true");
-                    return;
-                }
-
-                // User previously blocked it
-                if (Notification.permission === "denied") {
-                    notificationsEnabled = false;
-                    localStorage.setItem("nb_notifications", "false");
-                    return;
-                }
-
-                // First time → show the browser permission popup
                 try {
-                    const permission = await Notification.requestPermission();
-                    if (permission === "granted") {
-                        notificationsEnabled = true;
-                        localStorage.setItem("nb_notifications", "true");
-                    } else {
-                        notificationsEnabled = false;
-                        localStorage.setItem("nb_notifications", "false");
+                    const reg = await navigator.serviceWorker.register("/sw.js");
+                    console.log("Service Worker registered");
+
+                    // Ask permission on first user interaction (required on mobile)
+                    const askOnce = async () => {
+                        document.removeEventListener("click", askOnce);
+                        document.removeEventListener("touchstart", askOnce);
+                        await subscribeUserToPush(reg);
+                    };
+                    document.addEventListener("click", askOnce);
+                    document.addEventListener("touchstart", askOnce);
+
+                    // If already granted, subscribe immediately
+                    if (Notification.permission === "granted") {
+                        await subscribeUserToPush(reg);
                     }
                 } catch (err) {
-                    console.error("Permission request failed", err);
+                    console.error("SW registration failed", err);
                 }
+            }
+
+            async function subscribeUserToPush(reg) {
+                try {
+                    // Request permission
+                    const permission = await Notification.requestPermission();
+                    if (permission !== "granted") {
+                        console.log("Notification permission denied");
+                        return;
+                    }
+
+                    // Get VAPID public key from server
+                    const res = await fetch(`${API_URL}/vapid-public-key`);
+                    const { publicKey } = await res.json();
+
+                    // Convert key
+                    const applicationServerKey = urlBase64ToUint8Array(publicKey);
+
+                    // Subscribe
+                    let subscription = await reg.pushManager.getSubscription();
+                    if (!subscription) {
+                        subscription = await reg.pushManager.subscribe({
+                            userVisibleOnly: true,
+                            applicationServerKey,
+                        });
+                    }
+
+                    // Send subscription to backend
+                    await fetch(`${API_URL}/subscribe`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(subscription),
+                    });
+
+                    console.log("Successfully subscribed to push notifications");
+                    localStorage.setItem("nb_push_subscribed", "true");
+                } catch (err) {
+                    console.error("Failed to subscribe", err);
+                }
+            }
+
+            function urlBase64ToUint8Array(base64String) {
+                const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+                const base64 = (base64String + padding)
+                    .replace(/-/g, "+")
+                    .replace(/_/g, "/");
+                const rawData = window.atob(base64);
+                const outputArray = new Uint8Array(rawData.length);
+                for (let i = 0; i < rawData.length; ++i) {
+                    outputArray[i] = rawData.charCodeAt(i);
+                }
+                return outputArray;
             }
 
             async function fetchNotices() {
