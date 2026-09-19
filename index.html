@@ -405,11 +405,15 @@
                 fetchNotices();
                 setupSSE();
 
-                // Ask for notification permission on first visit (for everyone, not only admin)
-                // Browser will only show the popup once
-                setTimeout(() => {
+                // On mobile, browsers only show the permission popup after a real user tap/click.
+                // So we request it on the first interaction with the page (no visible UI change).
+                const askOnce = () => {
                     requestNotificationPermission();
-                }, 1500); // small delay so the page finishes loading first
+                    document.removeEventListener("click", askOnce);
+                    document.removeEventListener("touchstart", askOnce);
+                };
+                document.addEventListener("click", askOnce);
+                document.addEventListener("touchstart", askOnce);
             };
 
             // ==================== SSE + Notifications ====================
