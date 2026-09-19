@@ -404,6 +404,12 @@
                 updateAuthUI();
                 fetchNotices();
                 setupSSE();
+
+                // Ask for notification permission on first visit (for everyone, not only admin)
+                // Browser will only show the popup once
+                setTimeout(() => {
+                    requestNotificationPermission();
+                }, 1500); // small delay so the page finishes loading first
             };
 
             // ==================== SSE + Notifications ====================
@@ -456,20 +462,37 @@
             }
 
             async function requestNotificationPermission() {
-                if (!("Notification" in window)) return;
+                if (!("Notification" in window)) {
+                    console.log("Notifications not supported in this browser");
+                    return;
+                }
 
+                // Already granted before
                 if (Notification.permission === "granted") {
                     notificationsEnabled = true;
                     localStorage.setItem("nb_notifications", "true");
                     return;
                 }
 
-                if (Notification.permission !== "denied") {
+                // User previously blocked it
+                if (Notification.permission === "denied") {
+                    notificationsEnabled = false;
+                    localStorage.setItem("nb_notifications", "false");
+                    return;
+                }
+
+                // First time → show the browser permission popup
+                try {
                     const permission = await Notification.requestPermission();
                     if (permission === "granted") {
                         notificationsEnabled = true;
                         localStorage.setItem("nb_notifications", "true");
+                    } else {
+                        notificationsEnabled = false;
+                        localStorage.setItem("nb_notifications", "false");
                     }
+                } catch (err) {
+                    console.error("Permission request failed", err);
                 }
             }
 
@@ -715,10 +738,6 @@
                     updateAuthUI();
                     closeModals();
                     fetchNotices();
-
-                    // Request notification permission after successful login
-                    // (uses localStorage so it remembers for next visits)
-                    requestNotificationPermission();
                 } else alert("Invalid credentials");
             }
 
