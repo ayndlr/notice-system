@@ -1,0 +1,795 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>NoticeBoard • Campus Hub</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link
+            rel="stylesheet"
+            href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css"
+        />
+        <style>
+            @import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");
+            * {
+                font-family: "Inter", sans-serif;
+            }
+            ::-webkit-scrollbar {
+                width: 6px;
+            }
+            ::-webkit-scrollbar-track {
+                background: #09090b;
+            }
+            ::-webkit-scrollbar-thumb {
+                background: #27272a;
+                border-radius: 10px;
+            }
+            .notice-card {
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                border: 1px solid rgba(255, 255, 255, 0.05);
+            }
+            .notice-card:hover {
+                transform: translateY(-4px);
+                border-color: rgba(0, 212, 255, 0.3);
+                box-shadow: 0 20px 40px -12px rgba(0, 212, 255, 0.15);
+            }
+            .active-filter {
+                background: rgba(0, 212, 255, 0.1);
+                color: #22d3ee;
+                border-left: 3px solid #22d3ee;
+            }
+            .glass {
+                background: rgba(24, 24, 27, 0.8);
+                backdrop-filter: blur(12px);
+            }
+            .modal-container {
+                max-height: 90vh;
+                overflow-y: auto;
+            }
+            @keyframes loading {
+                from {
+                    background-position: 200% 0;
+                }
+                to {
+                    background-position: -200% 0;
+                }
+            }
+        </style>
+    </head>
+    <body class="bg-[#09090b] text-zinc-100 min-h-screen">
+        <nav
+            class="sticky top-0 z-[100] glass border-b border-white/5 px-4 md:px-8 py-4"
+        >
+            <div
+                class="max-w-[1600px] mx-auto flex items-center justify-between gap-6"
+            >
+                <div class="flex items-center gap-3">
+                    <div
+                        class="w-10 h-10 bg-cyan-500 rounded-xl flex items-center justify-center shadow-lg shadow-cyan-500/20"
+                    >
+                        <i
+                            class="fa-solid fa-clipboard-list text-zinc-900 text-xl"
+                        ></i>
+                    </div>
+                    <h1 class="text-xl font-bold hidden sm:block">
+                        NoticeBoard
+                    </h1>
+                </div>
+
+                <div class="flex-1 max-w-2xl relative group">
+                    <i
+                        class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within:text-cyan-400"
+                    ></i>
+                    <input
+                        type="text"
+                        id="searchInput"
+                        placeholder="Search notices..."
+                        class="w-full bg-zinc-900/50 border border-white/10 rounded-2xl py-3 pl-12 pr-4 outline-none focus:ring-2 focus:ring-cyan-500/30 transition-all"
+                    />
+                </div>
+
+                <div class="flex items-center gap-4">
+                    <button
+                        onclick="toggleAuth()"
+                        id="authBtn"
+                        class="text-sm font-medium hover:text-cyan-400 transition"
+                    >
+                        Login
+                    </button>
+                    <button
+                        onclick="openPostModal()"
+                        id="postBtn"
+                        class="hidden bg-cyan-500 hover:bg-cyan-400 text-zinc-900 px-5 py-2.5 rounded-xl font-bold transition flex items-center gap-2"
+                    >
+                        <i class="fa-solid fa-plus"></i>
+                        <span class="hidden md:inline">Post Notice</span>
+                    </button>
+                </div>
+            </div>
+        </nav>
+
+        <div
+            class="max-w-[1600px] mx-auto px-4 md:px-8 py-8 flex flex-col md:flex-row gap-8"
+        >
+            <aside class="w-full md:w-72 shrink-0 space-y-8">
+                <div>
+                    <p
+                        class="text-[11px] font-bold text-zinc-500 uppercase tracking-[0.2em] mb-4 ml-2"
+                    >
+                        Navigation
+                    </p>
+                    <nav class="space-y-1">
+                        <button
+                            onclick="applyFilter('all')"
+                            id="nav-all"
+                            class="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-white/5 transition active-filter"
+                        >
+                            <i class="fa-solid fa-house"></i> Dashboard
+                        </button>
+                        <button
+                            onclick="filterMyNotices()"
+                            id="nav-my"
+                            class="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-white/5 transition hidden"
+                        >
+                            <i class="fa-solid fa-user-pen"></i> My Posts
+                        </button>
+                    </nav>
+                </div>
+
+                <div>
+                    <p
+                        class="text-[11px] font-bold text-zinc-500 uppercase tracking-[0.2em] mb-4 ml-2"
+                    >
+                        Categories
+                    </p>
+                    <nav class="space-y-1">
+                        <button
+                            onclick="applyFilter('urgent')"
+                            id="nav-urgent"
+                            class="w-full flex items-center justify-between px-4 py-3 rounded-xl hover:bg-white/5 transition"
+                        >
+                            <span class="flex items-center gap-3"
+                                ><i
+                                    class="fa-solid fa-circle-exclamation text-red-400"
+                                ></i>
+                                Urgent</span
+                            >
+                            <span
+                                class="text-[10px] bg-red-400/10 text-red-400 px-2 py-0.5 rounded-full count-badge"
+                                data-cat="urgent"
+                                >0</span
+                            >
+                        </button>
+                        <button
+                            onclick="applyFilter('events')"
+                            id="nav-events"
+                            class="w-full flex items-center justify-between px-4 py-3 rounded-xl hover:bg-white/5 transition"
+                        >
+                            <span class="flex items-center gap-3"
+                                ><i
+                                    class="fa-solid fa-calendar text-emerald-400"
+                                ></i>
+                                Events</span
+                            >
+                            <span
+                                class="text-[10px] bg-emerald-400/10 text-emerald-400 px-2 py-0.5 rounded-full count-badge"
+                                data-cat="events"
+                                >0</span
+                            >
+                        </button>
+                        <button
+                            onclick="applyFilter('academic')"
+                            id="nav-academic"
+                            class="w-full flex items-center justify-between px-4 py-3 rounded-xl hover:bg-white/5 transition"
+                        >
+                            <span class="flex items-center gap-3"
+                                ><i
+                                    class="fa-solid fa-graduation-cap text-violet-400"
+                                ></i>
+                                Academic</span
+                            >
+                            <span
+                                class="text-[10px] bg-violet-400/10 text-violet-400 px-2 py-0.5 rounded-full count-badge"
+                                data-cat="academic"
+                                >0</span
+                            >
+                        </button>
+                        <button
+                            onclick="applyFilter('administrative')"
+                            id="nav-administrative"
+                            class="w-full flex items-center justify-between px-4 py-3 rounded-xl hover:bg-white/5 transition"
+                        >
+                            <span class="flex items-center gap-3"
+                                ><i
+                                    class="fa-solid fa-building-columns text-amber-400"
+                                ></i>
+                                Admin</span
+                            >
+                            <span
+                                class="text-[10px] bg-amber-400/10 text-amber-400 px-2 py-0.5 rounded-full count-badge"
+                                data-cat="administrative"
+                                >0</span
+                            >
+                        </button>
+                    </nav>
+                </div>
+            </aside>
+
+            <main class="flex-1">
+                <div class="mb-8">
+                    <h2
+                        id="mainHeading"
+                        class="text-3xl font-bold text-white mb-2"
+                    >
+                        Latest Notices
+                    </h2>
+                    <p id="subHeading" class="text-zinc-500 text-sm">
+                        Real-time campus updates
+                    </p>
+                </div>
+                <div
+                    id="noticesGrid"
+                    class="grid grid-cols-1 lg:grid-cols-2 gap-6"
+                ></div>
+            </main>
+        </div>
+
+        <!-- Overlay -->
+        <div
+            id="modalOverlay"
+            class="fixed inset-0 bg-black/90 backdrop-blur-md z-[200] hidden flex items-center justify-center p-4"
+        >
+            <!-- Create/Edit Modal -->
+            <div
+                id="postModal"
+                class="bg-zinc-900 border border-white/10 rounded-3xl w-full max-w-2xl hidden modal-container"
+            >
+                <div
+                    class="p-6 border-b border-white/5 flex justify-between items-center bg-white/5"
+                >
+                    <h3 id="pModalTitle" class="text-xl font-bold">
+                        New Announcement
+                    </h3>
+                    <button
+                        onclick="closeModals()"
+                        class="text-zinc-500 hover:text-white"
+                    >
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+                <div class="p-8 space-y-5">
+                    <input type="hidden" id="editId" />
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <div class="space-y-1">
+                            <label
+                                class="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1"
+                                >Title</label
+                            >
+                            <input
+                                type="text"
+                                id="pTitle"
+                                class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 outline-none focus:border-cyan-500"
+                            />
+                        </div>
+                        <div class="space-y-1">
+                            <label
+                                class="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1"
+                                >Category</label
+                            >
+                            <select
+                                id="pCat"
+                                class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white"
+                            >
+                                <option value="urgent">Urgent</option>
+                                <option value="events">Events</option>
+                                <option value="academic">Academic</option>
+                                <option value="administrative">
+                                    Administrative
+                                </option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="space-y-1">
+                        <label
+                            class="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1"
+                            >Message</label
+                        >
+                        <textarea
+                            id="pContent"
+                            rows="4"
+                            class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 outline-none focus:border-cyan-500"
+                        ></textarea>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <div class="space-y-1">
+                            <label
+                                class="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1"
+                                >Author Name</label
+                            >
+                            <input
+                                type="text"
+                                id="pAuthor"
+                                class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 outline-none focus:border-cyan-500"
+                            />
+                        </div>
+                        <div class="space-y-1">
+                            <label
+                                class="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1"
+                                >File Attachment</label
+                            >
+                            <input
+                                type="file"
+                                id="pFile"
+                                class="hidden"
+                                onchange="handleFile(event)"
+                            />
+                            <label
+                                for="pFile"
+                                class="w-full bg-cyan-500/5 border border-dashed border-cyan-500/20 rounded-xl px-4 py-3 flex items-center justify-between cursor-pointer"
+                            >
+                                <span
+                                    id="pFileName"
+                                    class="text-zinc-500 text-xs truncate"
+                                    >Maximum 10MB</span
+                                >
+                                <i
+                                    class="fa-solid fa-paperclip text-cyan-500"
+                                ></i>
+                            </label>
+                        </div>
+                    </div>
+                    <button
+                        onclick="submitNotice()"
+                        id="pBtn"
+                        class="w-full bg-cyan-500 text-zinc-900 font-bold py-4 rounded-xl shadow-lg transition disabled:opacity-50"
+                    >
+                        Publish Notice
+                    </button>
+                </div>
+            </div>
+
+            <!-- View Modal -->
+            <div
+                id="viewModal"
+                class="bg-zinc-900 border border-white/10 rounded-3xl w-full max-w-2xl hidden modal-container p-8 relative"
+            >
+                <button
+                    onclick="closeModals()"
+                    class="absolute top-6 right-6 text-zinc-500 hover:text-white"
+                >
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+                <div id="viewArea"></div>
+            </div>
+
+            <!-- Login Modal -->
+            <div
+                id="loginModal"
+                class="bg-zinc-900 border border-white/10 rounded-3xl p-8 w-full max-w-sm hidden"
+            >
+                <h3 class="text-xl font-bold mb-6 text-center">Admin Access</h3>
+                <div class="space-y-4">
+                    <input
+                        type="text"
+                        id="lUser"
+                        placeholder="Username"
+                        class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 outline-none"
+                    />
+                    <input
+                        type="password"
+                        id="lPass"
+                        placeholder="Password"
+                        class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 outline-none"
+                    />
+                    <button
+                        onclick="handleLogin()"
+                        id="lBtn"
+                        class="w-full bg-cyan-500 text-zinc-900 font-bold py-3 rounded-xl"
+                    >
+                        Sign In
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            const API_URL = "https://futi-noticeboard.onrender.com/api";
+            let allNotices = [];
+            let isLoggedIn = localStorage.getItem("nb_auth") === "true";
+            let tempFile = null;
+            let eventSource = null;
+            let notificationsEnabled = localStorage.getItem("nb_notifications") === "true";
+
+            window.onload = () => {
+                updateAuthUI();
+                fetchNotices();
+                setupSSE();
+
+                // Ask for notification permission on first visit (for everyone, not only admin)
+                // Browser will only show the popup once
+                setTimeout(() => {
+                    requestNotificationPermission();
+                }, 1500); // small delay so the page finishes loading first
+            };
+
+            // ==================== SSE + Notifications ====================
+            function setupSSE() {
+                if (eventSource) {
+                    eventSource.close();
+                }
+
+                eventSource = new EventSource(`${API_URL}/events`);
+
+                eventSource.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.type === "new_notice") {
+                            // Refresh the list automatically
+                            fetchNotices();
+
+                            // Show browser notification if previously allowed
+                            if (
+                                notificationsEnabled &&
+                                Notification.permission === "granted"
+                            ) {
+                                showBrowserNotification(data.notice);
+                            }
+                        }
+                    } catch (e) {
+                        console.error("SSE parse error", e);
+                    }
+                };
+
+                eventSource.onerror = () => {
+                    console.log("SSE connection lost, browser will retry...");
+                };
+            }
+
+            function showBrowserNotification(notice) {
+                const title = "📢 New Notice: " + notice.title;
+                const options = {
+                    body: notice.content.substring(0, 120) + (notice.content.length > 120 ? "..." : ""),
+                    icon: "ico.png",
+                    tag: "notice-" + notice._id,
+                    requireInteraction: false,
+                };
+
+                const n = new Notification(title, options);
+                n.onclick = () => {
+                    window.focus();
+                    n.close();
+                };
+            }
+
+            async function requestNotificationPermission() {
+                if (!("Notification" in window)) {
+                    console.log("Notifications not supported in this browser");
+                    return;
+                }
+
+                // Already granted before
+                if (Notification.permission === "granted") {
+                    notificationsEnabled = true;
+                    localStorage.setItem("nb_notifications", "true");
+                    return;
+                }
+
+                // User previously blocked it
+                if (Notification.permission === "denied") {
+                    notificationsEnabled = false;
+                    localStorage.setItem("nb_notifications", "false");
+                    return;
+                }
+
+                // First time → show the browser permission popup
+                try {
+                    const permission = await Notification.requestPermission();
+                    if (permission === "granted") {
+                        notificationsEnabled = true;
+                        localStorage.setItem("nb_notifications", "true");
+                    } else {
+                        notificationsEnabled = false;
+                        localStorage.setItem("nb_notifications", "false");
+                    }
+                } catch (err) {
+                    console.error("Permission request failed", err);
+                }
+            }
+
+            async function fetchNotices() {
+                try {
+                    const res = await fetch(`${API_URL}/notices`);
+                    allNotices = await res.json();
+                    updateCounts();
+                    renderGrid(allNotices);
+                } catch (err) {
+                    document.getElementById("noticesGrid").innerHTML =
+                        `<p class="text-red-400">Server unreachable.</p>`;
+                }
+            }
+
+            function updateCounts() {
+                ["urgent", "events", "academic", "administrative"].forEach(
+                    (cat) => {
+                        const count = allNotices.filter(
+                            (n) => n.category === cat,
+                        ).length;
+                        const badge = document.querySelector(
+                            `.count-badge[data-cat="${cat}"]`,
+                        );
+                        if (badge) badge.innerText = count;
+                    },
+                );
+            }
+
+            function renderGrid(data) {
+                const grid = document.getElementById("noticesGrid");
+                grid.innerHTML = data.length
+                    ? data
+                          .map(
+                              (n) => `
+                    <div class="notice-card bg-zinc-900/40 rounded-3xl p-6 cursor-pointer relative group" onclick="viewNotice('${n._id}')">
+                        <div class="flex justify-between items-start mb-4">
+                            <span class="text-[10px] font-black uppercase px-2 py-1 bg-zinc-800 rounded ${getCatColor(n.category)}">${n.category}</span>
+                            ${
+                                isLoggedIn
+                                    ? `
+                                <div class="flex gap-3">
+                                    <button onclick="event.stopPropagation(); editNotice('${n._id}')" class="text-zinc-500 hover:text-cyan-400 transition"><i class="fa-solid fa-pen-to-square"></i></button>
+                                    <button onclick="event.stopPropagation(); deleteNotice('${n._id}')" class="text-zinc-500 hover:text-red-400 transition"><i class="fa-solid fa-trash-can"></i></button>
+                                </div>
+                            `
+                                    : ""
+                            }
+                        </div>
+                        <h3 class="text-xl font-bold mb-2 line-clamp-2">${n.title}</h3>
+                        <p class="text-zinc-500 text-sm line-clamp-3 mb-6">${n.content}</p>
+                        <div class="pt-4 border-t border-white/5 flex justify-between items-center text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
+                            <span>${n.author}</span>
+                            <span>${new Date(n.date).toLocaleDateString()}</span>
+                        </div>
+                    </div>
+                `,
+                          )
+                          .join("")
+                    : `<div class="col-span-full py-20 text-center text-zinc-600">No notices found.</div>`;
+            }
+
+            function getCatColor(cat) {
+                const map = {
+                    urgent: "text-red-400",
+                    events: "text-emerald-400",
+                    academic: "text-violet-400",
+                    administrative: "text-amber-400",
+                };
+                return map[cat] || "text-cyan-400";
+            }
+
+            function applyFilter(cat) {
+                document
+                    .querySelectorAll("aside button")
+                    .forEach((b) => b.classList.remove("active-filter"));
+                document
+                    .getElementById(`nav-${cat}`)
+                    .classList.add("active-filter");
+                const data =
+                    cat === "all"
+                        ? allNotices
+                        : allNotices.filter((n) => n.category === cat);
+                renderGrid(data);
+            }
+
+            function filterMyNotices() {
+                document
+                    .querySelectorAll("aside button")
+                    .forEach((b) => b.classList.remove("active-filter"));
+                document
+                    .getElementById("nav-my")
+                    .classList.add("active-filter");
+                const data = allNotices.filter(
+                    (n) =>
+                        n.author.toLowerCase().includes("admin") ||
+                        n.author.toLowerCase().includes("stickz"),
+                );
+                renderGrid(data);
+            }
+
+            document
+                .getElementById("searchInput")
+                .addEventListener("input", (e) => {
+                    const q = e.target.value.toLowerCase();
+                    const results = allNotices.filter(
+                        (n) =>
+                            n.title.toLowerCase().includes(q) ||
+                            n.content.toLowerCase().includes(q) ||
+                            n.author.toLowerCase().includes(q),
+                    );
+                    renderGrid(results);
+                });
+
+            function handleFile(e) {
+                const file = e.target.files[0];
+                if (!file) return;
+                if (file.size > 10 * 1024 * 1024)
+                    return alert("File too large (Max 10MB)");
+                const reader = new FileReader();
+                reader.onload = () => {
+                    tempFile = {
+                        data: reader.result,
+                        name: file.name,
+                        type: file.type,
+                    };
+                    document.getElementById("pFileName").innerText = file.name;
+                };
+                reader.readAsDataURL(file);
+            }
+
+            async function submitNotice() {
+                const id = document.getElementById("editId").value;
+                const btn = document.getElementById("pBtn");
+                const data = {
+                    title: document.getElementById("pTitle").value,
+                    category: document.getElementById("pCat").value,
+                    content: document.getElementById("pContent").value,
+                    author: document.getElementById("pAuthor").value,
+                    attachment: tempFile,
+                };
+
+                if (!data.title || !data.content)
+                    return alert("Required fields missing");
+
+                btn.disabled = true;
+                btn.innerText = "Processing...";
+
+                try {
+                    const method = id ? "PUT" : "POST";
+                    const url = id
+                        ? `${API_URL}/notices/${id}`
+                        : `${API_URL}/notices`;
+
+                    const res = await fetch(url, {
+                        method: method,
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(data),
+                    });
+
+                    if (res.ok) {
+                        await fetchNotices();
+                        closeModals();
+                    } else {
+                        const err = await res.json();
+                        alert("Error: " + err.error);
+                    }
+                } catch (e) {
+                    alert("Submission failed");
+                } finally {
+                    btn.disabled = false;
+                    btn.innerText = "Publish Notice";
+                }
+            }
+
+            function editNotice(id) {
+                const n = allNotices.find((x) => x._id === id);
+                if (!n) return;
+
+                document.getElementById("editId").value = n._id;
+                document.getElementById("pTitle").value = n.title;
+                document.getElementById("pContent").value = n.content;
+                document.getElementById("pCat").value = n.category;
+                document.getElementById("pAuthor").value = n.author;
+                document.getElementById("pModalTitle").innerText =
+                    "Edit Announcement";
+                document.getElementById("pBtn").innerText = "Update Notice";
+                document.getElementById("pFileName").innerText =
+                    n.fileName || "Keep current or upload new";
+                tempFile = null;
+                showModal("postModal");
+            }
+
+            function viewNotice(id) {
+                const n = allNotices.find((x) => x._id === id);
+                if (!n) return;
+                const area = document.getElementById("viewArea");
+                area.innerHTML = `
+                    <span class="text-xs font-black uppercase text-cyan-500 mb-2 block">${n.category}</span>
+                    <h2 class="text-3xl font-bold mb-4">${n.title}</h2>
+                    <p class="text-sm text-zinc-500 mb-8 border-b border-white/5 pb-4">${n.author} • ${new Date(n.date).toLocaleDateString()}</p>
+                    <div class="text-zinc-300 whitespace-pre-wrap mb-10 text-lg">${n.content}</div>
+                    ${
+                        n.fileId
+                            ? `
+                        <div class="bg-white/5 border border-white/10 rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-4">
+                            <div class="flex items-center gap-4">
+                                <i class="fa-solid fa-file-pdf text-3xl text-cyan-500"></i>
+                                <div><p class="text-sm font-bold text-white">${n.fileName}</p></div>
+                            </div>
+                            <a href="${API_URL}/files/${n.fileId}" target="_blank" class="bg-cyan-500 text-zinc-900 px-6 py-2 rounded-xl font-bold text-sm">Open File</a>
+                        </div>
+                    `
+                            : ""
+                    }
+                `;
+                showModal("viewModal");
+            }
+
+            async function deleteNotice(id) {
+                if (!confirm("Permanently delete this notice?")) return;
+                try {
+                    const res = await fetch(`${API_URL}/notices/${id}`, {
+                        method: "DELETE",
+                    });
+                    if (res.ok) fetchNotices();
+                } catch (e) {
+                    alert("Delete failed");
+                }
+            }
+
+            async function handleLogin() {
+                const username = document.getElementById("lUser").value;
+                const password = document.getElementById("lPass").value;
+                const res = await fetch(`${API_URL}/login`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ username, password }),
+                });
+                if (res.ok) {
+                    isLoggedIn = true;
+                    localStorage.setItem("nb_auth", "true");
+                    updateAuthUI();
+                    closeModals();
+                    fetchNotices();
+                } else alert("Invalid credentials");
+            }
+
+            function toggleAuth() {
+                if (isLoggedIn) {
+                    isLoggedIn = false;
+                    localStorage.removeItem("nb_auth");
+                    updateAuthUI();
+                    fetchNotices();
+                } else showModal("loginModal");
+            }
+
+            function updateAuthUI() {
+                document
+                    .getElementById("postBtn")
+                    .classList.toggle("hidden", !isLoggedIn);
+                document
+                    .getElementById("nav-my")
+                    .classList.toggle("hidden", !isLoggedIn);
+                document.getElementById("authBtn").innerText = isLoggedIn
+                    ? "Logout"
+                    : "Login";
+            }
+
+            function openPostModal() {
+                document.getElementById("editId").value = "";
+                document.getElementById("pTitle").value = "";
+                document.getElementById("pContent").value = "";
+                document.getElementById("pAuthor").value = "Master Admin";
+                document.getElementById("pModalTitle").innerText =
+                    "New Announcement";
+                document.getElementById("pBtn").innerText = "Publish Notice";
+                document.getElementById("pFileName").innerText = "Maximum 10MB";
+                tempFile = null;
+                showModal("postModal");
+            }
+
+            function showModal(id) {
+                document
+                    .getElementById("modalOverlay")
+                    .classList.remove("hidden");
+                document
+                    .querySelectorAll("#modalOverlay > div")
+                    .forEach((d) => d.classList.add("hidden"));
+                document.getElementById(id).classList.remove("hidden");
+                document.body.style.overflow = "hidden";
+            }
+
+            function closeModals() {
+                document.getElementById("modalOverlay").classList.add("hidden");
+                document.body.style.overflow = "auto";
+            }
+        </script>
+    </body>
+</html>
